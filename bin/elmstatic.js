@@ -107,7 +107,8 @@ function readFile(unresolvedFileName) {
 }
 
 // [PageConfig] ->  String -> String -> String -> HtmlPage/Effects
-const generatePageConfig = R.curry((pages, outputPath, siteTitle, pageFileName) => {
+const generatePageConfig = R.curry((pages, outputPath, config, pageFileName) => {
+    const siteTitle = config.siteTitle
     const mtime = Fs.lstatSync(Path.join("_pages", pageFileName)).mtime
     const ext = Path.extname(pageFileName)
     const existingPage = R.find(R.propEq("pageFileName", pageFileName), pages)
@@ -126,7 +127,16 @@ const generatePageConfig = R.curry((pages, outputPath, siteTitle, pageFileName) 
 
         return R.pipe(
             R.mergeRight(R.__, attrs),
-            R.mergeRight({ siteTitle: appendTitle(siteTitle, attrs.title) }),
+            R.mergeRight({ siteTitle: appendTitle(config.siteTitle, attrs.title) }),
+            R.mergeRight({ siteName: config.siteTitle }),
+            R.mergeRight({ copyright: config.feed.copyright }),
+            R.mergeRight({ description: config.feed.description }),
+            R.mergeRight({ siteUrl: config.feed.link }),
+            R.mergeRight({ siteImage : config.feed.image }),
+            R.mergeRight({ language: config.feed.language }),
+            R.mergeRight({ generator: config.feed.generator }),
+            R.mergeRight({ authorName: config.feed.author.name }),
+            R.mergeRight({ authorUrl: config.feed.author.link }),
             R.mergeRight(parsePageFileName(outputPath, pageFileName))
         )({ layout: "Page", mtime, pageFileName })
     }
@@ -135,8 +145,8 @@ const generatePageConfig = R.curry((pages, outputPath, siteTitle, pageFileName) 
 })
 
 // [PageConfig] -> String -> String -> [String] -> [HtmlPage]/Effects
-function generatePageConfigs(pages, outputPath, siteTitle, pageFileNames) {
-    return R.map(generatePageConfig(pages, outputPath, siteTitle), pageFileNames)
+function generatePageConfigs(pages, outputPath, config, pageFileNames) {
+    return R.map(generatePageConfig(pages, outputPath, config), pageFileNames)
 }
 
 // String -> [PageOrPostConfig] -> Promise [HtmlPage]/Effects
@@ -146,10 +156,10 @@ function generatePages(elmJs, pages) {
             log.info("    Generating " + page.outputPath)
             return workerPool.exec(generateHtml, [elmJs, page]).then((html) => R.mergeRight(page, {html}))
         }
-        else 
+        else
             return Promise.resolve(page)
     }
-            
+
     return Promise.all(R.map(pagePromise, pages))
 }
 
@@ -176,7 +186,8 @@ function parsePostFileName(outputPath, postFileName) {
 const strToArray = (tags) => R.is(String, tags) ? R.split(/\s+/, tags) : R.defaultTo([], tags)
 
 // [PostConfig] -> String -> String -> [String] -> Bool -> [String] -> [PostHtmlPage]/Effects
-function generatePostConfigs(posts, outputPath, siteTitle, allowedTags, includeDrafts, postFileNames) {
+function generatePostConfigs(posts, outputPath, config, allowedTags, includeDrafts, postFileNames) {
+    const siteTitle = config.siteTitle
     const draftFilter = includeDrafts ? R.identity :
         (postConfig) => postConfig.isIndex || new Date(postConfig.date) <= new Date(Date.now() - new Date().getTimezoneOffset() * 60 * 1000)
 
@@ -187,7 +198,7 @@ function generatePostConfigs(posts, outputPath, siteTitle, allowedTags, includeD
             const existingPost = R.find(R.propEq("postFileName", postFileName), posts)
 
             if (R.isNil(existingPost) || mtime > existingPost.mtime || existingPost.isIndex) {
-                const outputFileName = R.tail(postFileName)  // Remove leading underscore 
+                const outputFileName = R.tail(postFileName)  // Remove leading underscore
                 const contents = Fs.readFileSync(Fs.realpathSync(postFileName)).toString()
                 const attrs = R.pipe(
                     ext == ".md" ? parseMarkdown : parseElmMarkup,
@@ -208,6 +219,15 @@ function generatePostConfigs(posts, outputPath, siteTitle, allowedTags, includeD
                 return R.pipe(
                     R.mergeRight(R.__, attrs),
                     R.mergeRight({ siteTitle: appendTitle(siteTitle, attrs.title) }),
+                    R.mergeRight({ siteName: siteTitle }),
+                    R.mergeRight({ copyright: config.feed.copyright }),
+                    R.mergeRight({ description: config.feed.description }),
+                    R.mergeRight({ siteUrl: config.feed.link }),
+                    R.mergeRight({ siteImage : config.feed.image }),
+                    R.mergeRight({ language: config.feed.language }),
+                    R.mergeRight({ generator: config.feed.generator }),
+                    R.mergeRight({ authorName: config.feed.author.name }),
+                    R.mergeRight({ authorUrl: config.feed.author.link }),
                     R.evolve({
                         tags: R.pipe(R.append(fileNameAttrs.section), R.reject(R.isEmpty))
                     }),
@@ -246,7 +266,7 @@ function generateHtml(elmJs, pageOrPost) {
     const dom = new JsDom(`<!DOCTYPE html><html><body></body></html>`, {
         runScripts: "outside-only"
     })
-    
+
     dom.runVMScript(script)
     if (dom.window.document.title == "error")
         throw new Error(`Error in ${pageOrPost.inputPath}:\n${dom.window.document.body.firstChild.attributes[0].value}`)
@@ -276,20 +296,30 @@ function getPostsWithTag(tag, posts) {
     }
     return R.filter(filter, posts)
 }
-    
+
 // String -> String -> [PostHtmlPage] -> Promise [TagPage]
-function generateTagPages(elmJs, outputPath, siteTitle, posts) {
+function generateTagPages(elmJs, outputPath, config, posts) {
+    const siteTitle = config.siteTitle
     return Promise.all(R.pipe(
         extractTags,
         R.map((tag) => ({
             layout: "Tag",
             markdown: "",
             outputPath: Path.join(outputPath, "tags", tag),
-            posts: getPostsWithTag(tag, posts), 
+            posts: getPostsWithTag(tag, posts),
             section: "",
             siteTitle: appendTitle(siteTitle, "Tag: " + tag),
             tag,
-            title: "Tag: " + tag
+            title: "Tag: " + tag,
+            siteName: siteTitle,
+            copyright: config.feed.copyright,
+            description: config.feed.description,
+            siteUrl: config.feed.link,
+            siteImage: config.feed.image,
+            language: config.feed.language,
+            generator: config.feed.generator,
+            authorName: config.feed.author.name,
+            authorUrl: config.feed.author.link
         })),
         R.map((page) => {
             log.info("    Generating " + page.outputPath)
@@ -364,8 +394,8 @@ function copyResources(outputPath) {
 
 // [PageConfig] -> [PostConfig] -> {includeDrafts: Bool} -> Promise {pages: [HtmlPage], posts: [HtmlPage]}/Effects
 function generateEverything(pages, posts, options) {
-    // Dependencies between different inputs and outputs look something like this, 
-    // (ie to build elm.js we need to read all page/post content to get both 
+    // Dependencies between different inputs and outputs look something like this,
+    // (ie to build elm.js we need to read all page/post content to get both
     // page and post configs), and this could be used to optimise which steps
     // are carried out on a given input change:
     // const buildDependencies = {
@@ -384,8 +414,8 @@ function generateEverything(pages, posts, options) {
 
     const config = readConfig()
 
-    const newPages = generatePageConfigs(pages, config.outputDir, config.siteTitle, Glob.sync("**/*.*(md|emu)", { cwd: "_pages" }))
-    const newPosts = generatePostConfigs(posts, config.outputDir, config.siteTitle,
+    const newPages = generatePageConfigs(pages, config.outputDir, config, Glob.sync("**/*.*(md|emu)", { cwd: "_pages" }))
+    const newPosts = generatePostConfigs(posts, config.outputDir, config,
         config.allowedTags, options.includeDrafts, Glob.sync("_posts/**/*.*(md|emu)"))
 
     const layouts = R.pipe(
@@ -399,36 +429,36 @@ function generateEverything(pages, posts, options) {
 
     log("  Generating pages and posts")
     return Promise.all([
-        generatePages(elmJs, newPages), 
+        generatePages(elmJs, newPages),
         generatePages(elmJs, newPosts),
-        generateTagPages(elmJs, config.outputDir, config.siteTitle, newPosts)
+        generateTagPages(elmJs, config.outputDir, config, newPosts)
     ])
     .then((result) => {
-        [newPagesWithHtml, newPostsWithHtml, tagPages] = result 
+        [newPagesWithHtml, newPostsWithHtml, tagPages] = result
         const dotGitPath = Path.join(config.outputDir, ".git")
         const dotGitContent = Fs.pathExistsSync(dotGitPath) ?
             Fs.readFileSync(Path.join(config.outputDir, ".git")).toString() : null
-    
+
         log(`  Cleaning out the output path (${config.outputDir})`)
         Fs.emptyDirSync(config.outputDir)
-    
+
         if (R.is(String, dotGitContent))
             Fs.writeFileSync(dotGitPath, dotGitContent)
         else
             ; // Do nothing, no .git file existed
-    
+
         log("  Writing HTML")
         R.forEach(writeHtmlPage, newPagesWithHtml)
         R.forEach(writeHtmlPage, newPostsWithHtml)
         R.forEach(writeHtmlPage, tagPages)
-    
+
         log("  Generating feeds")
         generateFeeds(config.feed, config.outputDir, R.reject(R.propEq("isIndex", true), newPosts))
         log("  Duplicating pages")
         duplicatePages(config.copy, config.outputDir)
         log("  Copying resources")
         copyResources(config.outputDir)
-    
+
         return { pages: newPagesWithHtml, posts: newPostsWithHtml }
     })
 }
@@ -450,9 +480,9 @@ function humaniseFsEvent(event) {
 }
 
 // Int -> Function -> Function/Effects
-// Accumulate events/paths until the function hasn't been called for <delay> ms, 
-// then call `func` with the accumulated array of events/paths. The reason to use 
-// this is that chokidar has no notion of rename; instead, there's a pair of 
+// Accumulate events/paths until the function hasn't been called for <delay> ms,
+// then call `func` with the accumulated array of events/paths. The reason to use
+// this is that chokidar has no notion of rename; instead, there's a pair of
 // `unlink` and `add` events
 function debounceFileEvents(delay, func) {
     let timeoutId = null
@@ -478,9 +508,9 @@ function handleError(extraLogMessage) {
             log.error("\n" + err.stack)
         }
         else
-            ; // No message means it's an `elm make` error, so it's already printed    
+            ; // No message means it's an `elm make` error, so it's already printed
 
-        if (!R.isNil(extraLogMessage)) 
+        if (!R.isNil(extraLogMessage))
             log(extraLogMessage)
         else
             ; // No extra message to display
@@ -497,8 +527,8 @@ function buildSiteOnce(options) {
 
 // {includeDrafts: Bool} -> ()/Effects
 function buildSiteAndWatch(options) {
-    let pages = [] 
-    let posts = [] 
+    let pages = []
+    let posts = []
 
     const watchPaths = ["_layouts", "_pages", "_posts", "_resources", "config.json", "elm.json"]
     let watcher = Chokidar.watch(watchPaths, { ignoreInitial: false, followSymlinks: false })
@@ -513,7 +543,7 @@ function buildSiteAndWatch(options) {
                 posts = result.posts
                 log("Ready! Watching for more changes...")
             })
-            .catch(handleError("Error! Watching for more changes..."))    
+            .catch(handleError("Error! Watching for more changes..."))
         }
         catch(err) {
             handleError("Error! Watching for more changes...")(err)
@@ -577,7 +607,7 @@ try {
     if (process.argv.length < 3)
         buildSiteOnce({ includeDrafts: false })
     else
-        flags.parse(process.argv)  // This invokes command & option callbacks 
+        flags.parse(process.argv)  // This invokes command & option callbacks
 }
 catch (err) {
     handleError()(err)
