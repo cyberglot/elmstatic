@@ -380,7 +380,10 @@ function generateFeeds(feedConfig, outputPath, posts) {
 // DuplicateConfig -> String -> ()/Effects
 function duplicatePages(config, outputPath) {
     R.forEachObjIndexed((dest, source) => {
-        Fs.copySync(Path.join(outputPath, source), Path.join(outputPath, dest))
+        if (Fs.pathExistsSync(source) && Fs.pathExistsSync(dest)) {
+            Fs.copySync(Path.join(outputPath, source), Path.join(outputPath, dest))
+        }
+        else ; // do nothing
     }, config)
 }
 
