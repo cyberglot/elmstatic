@@ -417,9 +417,12 @@ function generateEverything(pages, posts, options) {
 
     const config = readConfig()
 
-    const newPages = generatePageConfigs(pages, config.outputDir, config, Glob.sync("**/*.*(md|emu)", { cwd: "_pages" }))
-    const newPosts = generatePostConfigs(posts, config.outputDir, config,
-        config.allowedTags, options.includeDrafts, Glob.sync("_posts/**/*.*(md|emu)"))
+    const newPages = pages.length == 0 ?
+          generatePageConfigs(pages, config.outputDir, config, Glob.sync("**/*.*(md|emu)", { cwd: "_pages" })) :
+          []
+    const newPosts = posts.length == 0 ?
+          generatePostConfigs(posts, config.outputDir, config,config.allowedTags, options.includeDrafts, Glob.sync("_posts/**/*.*(md|emu)")) :
+          []
 
     const layouts = R.pipe(
         R.map(R.prop("layout")),
